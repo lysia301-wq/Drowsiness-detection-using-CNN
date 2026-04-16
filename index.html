@@ -1,0 +1,2388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VigilEye — Drowsiness Detection</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&family=DM+Sans:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #f4f6fa;
+        --surface: #ffffff;
+        --surface2: #eef1f7;
+        --border: #dde3ef;
+        --accent: #1a56db;
+        --accent2: #7c3aed;
+        --warn: #dc4e15;
+        --safe: #0a7c55;
+        --text: #111827;
+        --muted: #6b7a99;
+        --font-head: "Syne", sans-serif;
+        --font-mono: "DM Mono", monospace;
+        --font-body: "DM Sans", sans-serif;
+      }
+
+      html,
+      body {
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        overflow-x: hidden;
+      }
+
+      /* ── NOISE OVERLAY ── */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.12;
+      }
+
+      /* ── PAGES ── */
+      .page {
+        display: none;
+        min-height: 100vh;
+        animation: fadeIn 0.5s ease;
+      }
+      .page.active {
+        display: flex;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ══════════════════════════════
+   LOGIN PAGE
+══════════════════════════════ */
+      #loginPage {
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(
+            ellipse 80% 60% at 20% 10%,
+            rgba(26, 86, 219, 0.07) 0%,
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse 60% 80% at 80% 90%,
+            rgba(124, 58, 237, 0.06) 0%,
+            transparent 60%
+          ),
+          var(--bg);
+      }
+
+      .login-wrap {
+        width: 100%;
+        max-width: 440px;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+      }
+
+      .logo-mark {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-family: var(--font-head);
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .logo-eye {
+        width: 38px;
+        height: 38px;
+        position: relative;
+        border: 2px solid var(--accent);
+        border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+        animation: blink 4s ease-in-out infinite;
+      }
+      .logo-eye::before {
+        content: "";
+        width: 14px;
+        height: 14px;
+        background: var(--accent);
+        border-radius: 50%;
+      }
+      @keyframes blink {
+        0%,
+        90%,
+        100% {
+          transform: scaleY(1);
+        }
+        95% {
+          transform: scaleY(0.08);
+        }
+      }
+
+      .login-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 2.5rem;
+        box-shadow:
+          0 4px 32px rgba(26, 86, 219, 0.08),
+          0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+      .login-card h1 {
+        font-family: var(--font-head);
+        font-size: 1.6rem;
+        font-weight: 700;
+        margin-bottom: 0.4rem;
+      }
+      .login-card .sub {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-bottom: 2rem;
+        line-height: 1.5;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1.25rem;
+      }
+      .field label {
+        font-size: 0.78rem;
+        color: var(--muted);
+        font-family: var(--font-mono);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .field input {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-family: var(--font-body);
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+        outline: none;
+      }
+      .field input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.1);
+      }
+      .field input::placeholder {
+        color: var(--muted);
+      }
+
+      .btn-primary {
+        width: 100%;
+        padding: 0.85rem;
+        background: var(--accent);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        font-family: var(--font-head);
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        letter-spacing: 0.02em;
+        transition:
+          transform 0.15s,
+          box-shadow 0.2s,
+          opacity 0.2s;
+        box-shadow: 0 4px 16px rgba(26, 86, 219, 0.3);
+      }
+      .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(26, 86, 219, 0.35);
+      }
+      .btn-primary:active {
+        transform: translateY(0);
+      }
+
+      .login-footer {
+        font-size: 0.8rem;
+        color: var(--muted);
+        text-align: center;
+      }
+      .login-footer span {
+        color: var(--accent);
+        cursor: pointer;
+      }
+
+      .error-msg {
+        background: rgba(255, 107, 53, 0.1);
+        border: 1px solid rgba(255, 107, 53, 0.3);
+        color: #c05621;
+        padding: 0.65rem 1rem;
+        border-radius: 6px;
+        font-size: 0.83rem;
+        display: none;
+        margin-bottom: 1rem;
+      }
+
+      /* Demo hint */
+      .demo-hint {
+        background: rgba(26, 86, 219, 0.05);
+        border: 1px solid rgba(26, 86, 219, 0.15);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+        font-family: var(--font-mono);
+      }
+      .demo-hint b {
+        color: var(--accent);
+      }
+
+      /* ══════════════════════════════
+   TERMS PAGE
+══════════════════════════════ */
+      #termsPage {
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        background:
+          radial-gradient(
+            ellipse 70% 50% at 50% 0%,
+            rgba(124, 58, 237, 0.06) 0%,
+            transparent 60%
+          ),
+          var(--bg);
+      }
+
+      .terms-wrap {
+        width: 100%;
+        max-width: 640px;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .terms-header {
+        text-align: center;
+      }
+      .terms-header h2 {
+        font-family: var(--font-head);
+        font-size: 1.8rem;
+        font-weight: 800;
+        margin-bottom: 0.4rem;
+      }
+      .terms-header p {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .disclaimer-box {
+        background: rgba(255, 107, 53, 0.07);
+        border: 1px solid rgba(255, 107, 53, 0.25);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+      }
+      .disclaimer-box .dtitle {
+        font-family: var(--font-head);
+        font-weight: 700;
+        color: var(--warn);
+        font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .disclaimer-box p {
+        font-size: 0.875rem;
+        line-height: 1.7;
+        color: #64748b;
+      }
+
+      .terms-scroll {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.5rem;
+        max-height: 220px;
+        overflow-y: auto;
+        font-size: 0.85rem;
+        line-height: 1.8;
+        color: #374151;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      .terms-scroll h4 {
+        font-family: var(--font-head);
+        color: var(--text);
+        font-size: 0.9rem;
+        margin-bottom: 0.4rem;
+        margin-top: 1rem;
+      }
+      .terms-scroll h4:first-child {
+        margin-top: 0;
+      }
+
+      .terms-check {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        cursor: pointer;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        transition: border-color 0.2s;
+      }
+      .terms-check:hover {
+        border-color: var(--accent);
+      }
+      .terms-check input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+        flex-shrink: 0;
+        margin-top: 2px;
+        cursor: pointer;
+      }
+      .terms-check span {
+        font-size: 0.875rem;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+      .terms-check span b {
+        color: var(--text);
+      }
+
+      .btn-outline {
+        width: 100%;
+        padding: 0.85rem;
+        background: transparent;
+        color: var(--accent);
+        border: 1.5px solid var(--accent);
+        border-radius: 8px;
+        font-family: var(--font-head);
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        letter-spacing: 0.02em;
+        transition:
+          background 0.2s,
+          transform 0.15s;
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      .btn-outline.enabled {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .btn-outline.enabled:hover {
+        background: rgba(26, 86, 219, 0.07);
+        transform: translateY(-1px);
+      }
+
+      /* ══════════════════════════════
+   MAIN APP PAGE
+══════════════════════════════ */
+      #appPage {
+        flex-direction: column;
+        min-height: 100vh;
+        background:
+          radial-gradient(
+            ellipse 100% 40% at 50% 0%,
+            rgba(26, 86, 219, 0.04) 0%,
+            transparent 50%
+          ),
+          var(--bg);
+      }
+
+      /* NAV */
+      nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 2.5rem;
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(12px);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: rgba(244, 246, 250, 0.9);
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-family: var(--font-head);
+        font-weight: 800;
+        font-size: 1.1rem;
+      }
+      .nav-logo .dot {
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(0.7);
+        }
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .nav-user {
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .nav-badge {
+        background: rgba(26, 86, 219, 0.08);
+        border: 1px solid rgba(26, 86, 219, 0.2);
+        color: var(--accent);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 20px;
+      }
+      .btn-logout {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        padding: 0.4rem 0.9rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          color 0.2s;
+        font-family: var(--font-body);
+      }
+      .btn-logout:hover {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+
+      /* MAIN LAYOUT */
+      .app-main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        grid-template-rows: auto 1fr;
+        gap: 0;
+        max-width: 1200px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 2rem 2.5rem;
+        gap: 1.5rem;
+      }
+
+      /* HERO ZONE */
+      .hero-zone {
+        grid-column: 1/-1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1.5rem 2rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+      }
+      .hero-zone::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          135deg,
+          rgba(26, 86, 219, 0.04) 0%,
+          transparent 50%
+        );
+        pointer-events: none;
+      }
+      .hero-text h2 {
+        font-family: var(--font-head);
+        font-size: 1.4rem;
+        font-weight: 800;
+        margin-bottom: 0.3rem;
+      }
+      .hero-text p {
+        font-size: 0.875rem;
+        color: var(--muted);
+        max-width: 420px;
+        line-height: 1.6;
+      }
+      .hero-stat {
+        text-align: right;
+        font-family: var(--font-mono);
+      }
+      .hero-stat .big {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: var(--accent);
+        line-height: 1;
+        display: block;
+      }
+      .hero-stat .label {
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 0.2rem;
+      }
+
+      /* UPLOAD CARD */
+      .upload-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+      }
+      .section-label {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+      }
+
+      .drop-zone {
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        padding: 2.5rem 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        position: relative;
+        overflow: hidden;
+      }
+      .drop-zone:hover,
+      .drop-zone.drag-over {
+        border-color: var(--accent);
+        background: rgba(26, 86, 219, 0.04);
+      }
+      .drop-zone input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .drop-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .drop-zone h3 {
+        font-family: var(--font-head);
+        font-size: 1rem;
+        font-weight: 700;
+        margin-bottom: 0.35rem;
+      }
+      .drop-zone p {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .drop-zone .formats {
+        display: inline-flex;
+        gap: 0.4rem;
+        margin-top: 0.75rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .format-tag {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.15rem 0.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+
+      /* PREVIEW */
+      .preview-wrap {
+        display: none;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .preview-wrap.show {
+        display: flex;
+      }
+      .preview-img-box {
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 180px;
+      }
+      .preview-img-box img {
+        max-width: 100%;
+        max-height: 280px;
+        object-fit: contain;
+        display: block;
+      }
+      .img-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.35);
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .preview-img-box:hover .img-overlay {
+        opacity: 1;
+      }
+      .img-overlay span {
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--accent);
+      }
+
+      .preview-meta {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .meta-chip {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.3rem 0.7rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .meta-chip b {
+        color: var(--text);
+      }
+
+      .btn-analyze {
+        width: 100%;
+        padding: 0.9rem;
+        background: linear-gradient(135deg, var(--accent), #1e40af);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        font-family: var(--font-head);
+        font-size: 1rem;
+        font-weight: 800;
+        cursor: pointer;
+        letter-spacing: 0.02em;
+        transition:
+          transform 0.15s,
+          box-shadow 0.2s,
+          opacity 0.2s;
+        box-shadow: 0 4px 16px rgba(26, 86, 219, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+      }
+      .btn-analyze:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(26, 86, 219, 0.35);
+      }
+      .btn-analyze:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-analyze .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #ffffff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: none;
+      }
+      .btn-analyze.loading .spinner {
+        display: block;
+      }
+      .btn-analyze.loading .btn-text {
+        display: none;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .btn-reset {
+        width: 100%;
+        padding: 0.6rem;
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        font-family: var(--font-body);
+        transition:
+          border-color 0.2s,
+          color 0.2s;
+      }
+      .btn-reset:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      /* RESULT PANEL */
+      .result-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+      }
+
+      .result-empty {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 0.75rem;
+        padding: 2rem 0;
+        color: var(--muted);
+      }
+      .result-empty .empty-icon {
+        font-size: 2.5rem;
+        opacity: 0.3;
+      }
+      .result-empty p {
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+
+      /* THE BIG RESULT */
+      .result-display {
+        display: none;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+      .result-display.show {
+        display: flex;
+      }
+
+      .status-badge {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1.75rem;
+        border-radius: 12px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.4s ease;
+      }
+      .status-badge.awake {
+        background: rgba(0, 200, 150, 0.08);
+        border: 1.5px solid rgba(0, 200, 150, 0.3);
+      }
+      .status-badge.sleepy {
+        background: rgba(255, 107, 53, 0.08);
+        border: 1.5px solid rgba(255, 107, 53, 0.3);
+      }
+      .status-badge .status-icon {
+        font-size: 2.8rem;
+        margin-bottom: 0.5rem;
+        animation: statusPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      @keyframes statusPop {
+        from {
+          transform: scale(0.5);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .status-badge .status-word {
+        font-family: var(--font-head);
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .status-badge.awake .status-word {
+        color: var(--safe);
+      }
+      .status-badge.sleepy .status-word {
+        color: var(--warn);
+      }
+      .status-badge .status-sub {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.35rem;
+      }
+
+      /* CONFIDENCE BAR */
+      .conf-section {
+      }
+      .conf-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+      }
+      .conf-header span {
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .conf-header .conf-val {
+        color: var(--text);
+        font-weight: 400;
+      }
+      .conf-bar-track {
+        height: 8px;
+        background: var(--bg);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .conf-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+        width: 0%;
+      }
+      .conf-bar-fill.awake {
+        background: linear-gradient(90deg, #00c896, #00e5b8);
+      }
+      .conf-bar-fill.sleepy {
+        background: linear-gradient(90deg, #ff6b35, #ff9068);
+      }
+
+      /* METRICS GRID */
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+      }
+      .metric-box {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.75rem;
+      }
+      .metric-box .m-label {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.3rem;
+      }
+      .metric-box .m-val {
+        font-family: var(--font-head);
+        font-size: 1.1rem;
+        font-weight: 700;
+      }
+
+      /* RECOMMENDATION */
+      .recommendation {
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+      .recommendation.awake {
+        background: rgba(0, 200, 150, 0.07);
+        border: 1px solid rgba(0, 200, 150, 0.2);
+        color: #065f46;
+      }
+      .recommendation.sleepy {
+        background: rgba(255, 107, 53, 0.07);
+        border: 1px solid rgba(255, 107, 53, 0.2);
+        color: #9b2c2c;
+      }
+      .recommendation .rec-title {
+        font-family: var(--font-head);
+        font-weight: 700;
+        margin-bottom: 0.3rem;
+        font-size: 0.9rem;
+      }
+
+      /* SIDEBAR */
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      /* HISTORY */
+      .history-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+        flex: 1;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      }
+      .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        max-height: 300px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      .history-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: border-color 0.15s;
+        font-size: 0.83rem;
+      }
+      .history-item:hover {
+        border-color: var(--accent);
+      }
+      .h-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .h-dot.awake {
+        background: var(--safe);
+      }
+      .h-dot.sleepy {
+        background: var(--warn);
+      }
+      .h-name {
+        flex: 1;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .h-conf {
+        font-family: var(--font-mono);
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      .history-empty {
+        color: var(--muted);
+        font-size: 0.83rem;
+        text-align: center;
+        padding: 1.5rem 0;
+      }
+
+      /* STATS CARD */
+      .stats-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      }
+      .stats-row {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+      .stat-box {
+        flex: 1;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.75rem;
+        text-align: center;
+      }
+      .stat-box .s-num {
+        font-family: var(--font-head);
+        font-size: 1.5rem;
+        font-weight: 800;
+      }
+      .stat-box .s-num.awake {
+        color: var(--safe);
+      }
+      .stat-box .s-num.sleepy {
+        color: var(--warn);
+      }
+      .stat-box .s-label {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+        margin-top: 0.2rem;
+      }
+
+      /* MODEL INFO CARD */
+      .model-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+      }
+      .model-specs {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+      .spec-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.8rem;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .spec-row:last-child {
+        border-bottom: none;
+      }
+      .spec-key {
+        color: var(--muted);
+        font-family: var(--font-mono);
+      }
+      .spec-val {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .spec-val.green {
+        color: var(--safe);
+      }
+      .spec-val.accent {
+        color: var(--accent);
+      }
+
+      /* BACKEND STATUS */
+      .backend-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-top: 0.75rem;
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .status-dot.online {
+        background: var(--safe);
+        animation: pulse 2s infinite;
+      }
+      .status-dot.offline {
+        background: var(--warn);
+      }
+      .status-dot.checking {
+        background: var(--accent);
+        animation: pulse 1s infinite;
+      }
+
+      /* TOAST */
+      .toast {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        z-index: 9998;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.85rem 1.25rem;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        transform: translateY(100px);
+        opacity: 0;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        max-width: 320px;
+      }
+      .toast.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      .toast-icon {
+        font-size: 1.1rem;
+      }
+
+      /* TIPS CARD */
+      .tips-card {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+      }
+      .tip-item {
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.8rem;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+        line-height: 1.5;
+      }
+      .tip-item:last-child {
+        margin-bottom: 0;
+      }
+      .tip-item span:first-child {
+        flex-shrink: 0;
+        font-size: 0.9rem;
+      }
+
+      /* ══════════════════════════════
+   TABS
+══════════════════════════════ */
+      .tab-bar {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.25rem;
+        border-bottom: 2px solid var(--border);
+        padding-bottom: 0;
+      }
+      .tab-btn {
+        padding: 0.6rem 1.25rem;
+        border: none;
+        background: transparent;
+        font-family: var(--font-head);
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--muted);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition:
+          color 0.2s,
+          border-color 0.2s;
+        letter-spacing: 0.01em;
+      }
+      .tab-btn.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .tab-btn:hover:not(.active) {
+        color: var(--text);
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      /* ══════════════════════════════
+   WEBCAM
+══════════════════════════════ */
+      .cam-wrap {
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--surface2);
+        position: relative;
+        min-height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .cam-wrap video {
+        width: 100%;
+        max-height: 300px;
+        object-fit: cover;
+        display: block;
+        border-radius: 10px;
+      }
+      .cam-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--muted);
+        text-align: center;
+        padding: 2rem;
+      }
+      .cam-placeholder .cam-icon {
+        font-size: 2.5rem;
+        opacity: 0.4;
+      }
+      .cam-placeholder p {
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
+
+      .cam-controls {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .btn-cam-start {
+        flex: 1;
+        padding: 0.8rem;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-family: var(--font-head);
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(26, 86, 219, 0.25);
+        transition:
+          transform 0.15s,
+          box-shadow 0.2s;
+      }
+      .btn-cam-start:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(26, 86, 219, 0.3);
+      }
+      .btn-cam-stop {
+        padding: 0.8rem 1.25rem;
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: var(--font-body);
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          color 0.2s;
+      }
+      .btn-cam-stop:hover {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+
+      .btn-capture {
+        width: 100%;
+        padding: 0.85rem;
+        background: linear-gradient(135deg, var(--accent), #1e40af);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-family: var(--font-head);
+        font-size: 1rem;
+        font-weight: 800;
+        cursor: pointer;
+        letter-spacing: 0.02em;
+        box-shadow: 0 4px 16px rgba(26, 86, 219, 0.3);
+        transition:
+          transform 0.15s,
+          box-shadow 0.2s,
+          opacity 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+      }
+      .btn-capture:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(26, 86, 219, 0.35);
+      }
+      .btn-capture:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .btn-capture .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: none;
+      }
+      .btn-capture.loading .spinner {
+        display: block;
+      }
+      .btn-capture.loading .btn-text {
+        display: none;
+      }
+
+      /* AUTO MODE */
+      .auto-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+      }
+      .auto-label {
+        font-size: 0.85rem;
+        color: var(--text);
+      }
+      .auto-label small {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+      .toggle-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .toggle {
+        width: 42px;
+        height: 24px;
+        background: var(--border);
+        border-radius: 12px;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.2s;
+        border: none;
+        flex-shrink: 0;
+      }
+      .toggle.on {
+        background: var(--accent);
+      }
+      .toggle::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.2s;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+      }
+      .toggle.on::after {
+        transform: translateX(18px);
+      }
+      .interval-select {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 0.3rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-family: var(--font-mono);
+        outline: none;
+      }
+      .interval-select:focus {
+        border-color: var(--accent);
+      }
+
+      .auto-status {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 0.4rem 0.75rem;
+        background: rgba(26, 86, 219, 0.06);
+        border: 1px solid rgba(26, 86, 219, 0.15);
+        border-radius: 6px;
+        color: var(--accent);
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .auto-status.show {
+        display: flex;
+      }
+      .auto-pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: pulse 1s ease-in-out infinite;
+        flex-shrink: 0;
+      }
+
+      /* hidden canvas for capture */
+      #snapCanvas {
+        display: none;
+      }
+
+      /* RESPONSIVE */
+      @media (max-width: 900px) {
+        .app-main {
+          grid-template-columns: 1fr;
+          padding: 1rem;
+        }
+        .hero-zone {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 1rem;
+        }
+        .hero-stat {
+          text-align: left;
+        }
+        .sidebar {
+          grid-row: auto;
+        }
+      }
+      @media (max-width: 500px) {
+        nav {
+          padding: 0.85rem 1rem;
+        }
+        .login-card {
+          padding: 1.75rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ══════════════════════════════
+     PAGE 1: LOGIN
+══════════════════════════════ -->
+    <div id="loginPage" class="page active">
+      <div class="login-wrap">
+        <div class="logo-mark">
+          <div class="logo-eye"></div>
+          VigilEye
+        </div>
+
+        <div class="login-card">
+          <h1>Welcome back</h1>
+          <p class="sub">
+            Sign in to access the drowsiness detection platform.
+          </p>
+
+          <div class="error-msg" id="loginError">
+            Invalid credentials. Please try again.
+          </div>
+
+          <div class="field">
+            <label>Username</label>
+            <input
+              type="text"
+              id="loginUser"
+              placeholder="Enter your username"
+              autocomplete="username"
+            />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input
+              type="password"
+              id="loginPass"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+            />
+          </div>
+
+          <button class="btn-primary" onclick="doLogin()">Sign In →</button>
+        </div>
+
+        <div class="demo-hint">
+          <b>Demo credentials</b><br />
+          Username: <b>admin</b> &nbsp;|&nbsp; Password: <b>vigil123</b>
+        </div>
+
+        <p class="login-footer">Research prototype · Not for clinical use</p>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════
+     PAGE 2: TERMS
+══════════════════════════════ -->
+    <div
+      id="termsPage"
+      class="page"
+      style="
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      "
+    >
+      <div class="terms-wrap">
+        <div class="terms-header">
+          <h2>Before you continue</h2>
+          <p>Please review our dataset context and usage terms</p>
+        </div>
+
+        <div class="disclaimer-box">
+          <div class="dtitle">⚠ Important — Model Limitations</div>
+          <p>
+            This model was trained on <strong>10,000 images</strong> out of the
+            full <strong>84,000-image MRL Eye Dataset</strong>. Results reflect
+            this constrained training subset. Confidence scores are indicative
+            only and
+            <strong
+              >should not be used for any clinical, medical, or safety-critical
+              decision-making</strong
+            >. Performance may vary across different eye types, lighting
+            conditions, and camera qualities.
+          </p>
+        </div>
+
+        <div class="terms-scroll">
+          <h4>1. Purpose of This Application</h4>
+          VigilEye is a research prototype built to demonstrate the feasibility
+          of transfer learning–based drowsiness detection for general-purpose
+          use cases including student alertness monitoring, remote work fatigue
+          detection, and occupational safety awareness.
+
+          <h4>2. No Medical or Safety Guarantee</h4>
+          This system does not provide medical advice, diagnosis, or treatment.
+          It must not be relied upon in safety-critical contexts including but
+          not limited to driving, operating heavy machinery, or medical
+          monitoring.
+
+          <h4>3. Data Privacy</h4>
+          Images you upload are sent to a local inference server only and are
+          not stored, logged, or transmitted to any third party. No personally
+          identifiable information is collected.
+
+          <h4>4. Model Accuracy Disclaimer</h4>
+          The MobileNetV2 model achieves 88.56% accuracy and 90.59% Recall on
+          the MRL validation set under controlled conditions. Real-world
+          performance may differ. The model was trained on a 10k subset; full
+          dataset training is ongoing research.
+
+          <h4>5. Acceptable Use</h4>
+          This application is for educational and research demonstration
+          purposes only. Commercial use, redistribution, or deployment in
+          production systems requires explicit written permission.
+
+          <h4>6. Limitation of Liability</h4>
+          The developers of VigilEye accept no liability for any decisions made
+          based on the output of this system.
+        </div>
+
+        <label class="terms-check" id="termsCheckLabel">
+          <input type="checkbox" id="termsCheck" onchange="toggleTermsBtn()" />
+          <span
+            >I have read and understood the above terms. I acknowledge that this
+            is a <b>research prototype trained on a 10k subset</b> of the MRL
+            Eye Dataset and will not use it for safety-critical decisions.</span
+          >
+        </label>
+
+        <button class="btn-outline" id="termsBtn" onclick="goToApp()">
+          I Agree — Enter VigilEye →
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════
+     PAGE 3: MAIN APP
+══════════════════════════════ -->
+    <div id="appPage" class="page" style="flex-direction: column">
+      <nav>
+        <div class="nav-logo">
+          <div class="dot"></div>
+          VigilEye
+        </div>
+        <div class="nav-right">
+          <span class="nav-badge">MobileNetV2</span>
+          <span class="nav-user" id="navUser">admin</span>
+          <button class="btn-logout" onclick="doLogout()">Logout</button>
+        </div>
+      </nav>
+
+      <div class="app-main">
+        <!-- HERO -->
+        <div class="hero-zone">
+          <div class="hero-text">
+            <h2>Eye State Analysis</h2>
+            <p>
+              Upload a clear eye image to detect drowsiness using MobileNetV2
+              transfer learning. Works best with well-lit, frontal eye
+              photographs.
+            </p>
+          </div>
+          <div class="hero-stat">
+            <span class="big">88.56%</span>
+            <div class="label">Model Accuracy · 10k Training Subset</div>
+          </div>
+        </div>
+
+        <!-- UPLOAD + RESULT -->
+        <div class="upload-card">
+          <!-- TABS -->
+          <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('upload', this)">
+              📁 Upload Image
+            </button>
+            <button class="tab-btn" onclick="switchTab('webcam', this)">
+              📷 Live Camera
+            </button>
+          </div>
+
+          <!-- UPLOAD TAB -->
+          <div class="tab-panel active" id="tabUpload">
+            <div>
+              <div class="section-label">Upload Eye Image</div>
+
+              <div class="drop-zone" id="dropZone">
+                <input
+                  type="file"
+                  id="fileInput"
+                  accept="image/*"
+                  onchange="handleFile(event)"
+                />
+                <div class="drop-icon">👁</div>
+                <h3>Drop eye image here</h3>
+                <p>or click to browse files</p>
+                <div class="formats">
+                  <span class="format-tag">JPG</span>
+                  <span class="format-tag">PNG</span>
+                  <span class="format-tag">WEBP</span>
+                  <span class="format-tag">BMP</span>
+                </div>
+              </div>
+
+              <div class="preview-wrap" id="previewWrap">
+                <div class="preview-img-box">
+                  <img id="previewImg" src="" alt="Preview" />
+                  <div class="img-overlay">
+                    <span>👁 Eye image loaded</span>
+                  </div>
+                </div>
+                <div class="preview-meta" id="previewMeta"></div>
+                <button
+                  class="btn-analyze"
+                  id="analyzeBtn"
+                  onclick="analyzeImage()"
+                >
+                  <div class="spinner"></div>
+                  <span class="btn-text">⚡ Analyze Eye State</span>
+                </button>
+                <button class="btn-reset" onclick="resetUpload()">
+                  ↩ Upload different image
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- /tabUpload -->
+
+          <!-- WEBCAM TAB -->
+          <div class="tab-panel" id="tabWebcam">
+            <div>
+              <div class="section-label">Live Camera Feed</div>
+              <div class="cam-wrap" id="camWrap">
+                <div class="cam-placeholder" id="camPlaceholder">
+                  <div class="cam-icon">📷</div>
+                  <p>Camera not started.<br />Click Start Camera to begin.</p>
+                </div>
+                <video
+                  id="camVideo"
+                  autoplay
+                  playsinline
+                  muted
+                  style="display: none"
+                ></video>
+              </div>
+              <canvas id="snapCanvas"></canvas>
+            </div>
+
+            <div class="cam-controls">
+              <button
+                class="btn-cam-start"
+                id="btnCamStart"
+                onclick="startCamera()"
+              >
+                ▶ Start Camera
+              </button>
+              <button
+                class="btn-cam-stop"
+                id="btnCamStop"
+                onclick="stopCamera()"
+                style="display: none"
+              >
+                ■ Stop
+              </button>
+            </div>
+
+            <button
+              class="btn-capture"
+              id="captureBtn"
+              onclick="captureAndAnalyze()"
+              disabled
+            >
+              <div class="spinner"></div>
+              <span class="btn-text">📸 Capture &amp; Analyze</span>
+            </button>
+
+            <!-- AUTO MODE -->
+            <div class="auto-row">
+              <div class="auto-label">
+                Auto-Analyze
+                <small
+                  >Automatically capture &amp; analyze at set interval</small
+                >
+              </div>
+              <div class="toggle-wrap">
+                <select class="interval-select" id="intervalSelect">
+                  <option value="2000">2s</option>
+                  <option value="3000" selected>3s</option>
+                  <option value="5000">5s</option>
+                  <option value="10000">10s</option>
+                </select>
+                <button
+                  class="toggle"
+                  id="autoToggle"
+                  onclick="toggleAuto()"
+                ></button>
+              </div>
+            </div>
+            <div class="auto-status" id="autoStatus">
+              <div class="auto-pulse"></div>
+              <span id="autoStatusText">Auto-analyzing every 3s...</span>
+            </div>
+          </div>
+          <!-- /tabWebcam -->
+
+          <!-- TIPS -->
+          <div class="tips-card">
+            <div class="section-label">Tips for Best Results</div>
+            <div class="tip-item">
+              <span>💡</span
+              ><span>Use well-lit images with clear eye visibility</span>
+            </div>
+            <div class="tip-item">
+              <span>📐</span><span>Frontal or slight angle works best</span>
+            </div>
+            <div class="tip-item">
+              <span>🔍</span
+              ><span>Avoid blurry or very low-resolution images</span>
+            </div>
+            <div class="tip-item">
+              <span>🕶</span
+              ><span>Remove glasses if possible for higher confidence</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULT -->
+        <div class="result-card">
+          <div class="section-label">Detection Result</div>
+
+          <div class="result-empty" id="resultEmpty">
+            <div class="empty-icon">🔬</div>
+            <p>
+              Upload an eye image and click Analyze to see the drowsiness
+              detection result here.
+            </p>
+          </div>
+
+          <div class="result-display" id="resultDisplay">
+            <div class="status-badge" id="statusBadge">
+              <div class="status-icon" id="statusIcon"></div>
+              <div class="status-word" id="statusWord"></div>
+              <div class="status-sub" id="statusSub"></div>
+            </div>
+
+            <div class="conf-section">
+              <div class="conf-header">
+                <span>Confidence Score</span>
+                <span class="conf-val" id="confVal">—</span>
+              </div>
+              <div class="conf-bar-track">
+                <div class="conf-bar-fill" id="confBar"></div>
+              </div>
+            </div>
+
+            <div class="metrics-grid">
+              <div class="metric-box">
+                <div class="m-label">Raw Score</div>
+                <div class="m-val" id="rawScore">—</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-label">Threshold</div>
+                <div class="m-val">0.5</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-label">Model</div>
+                <div class="m-val" style="font-size: 0.85rem">MobileNetV2</div>
+              </div>
+              <div class="metric-box">
+                <div class="m-label">Input Size</div>
+                <div class="m-val">96×96</div>
+              </div>
+            </div>
+
+            <div class="recommendation" id="recBox">
+              <div class="rec-title" id="recTitle"></div>
+              <div id="recText"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+          <!-- SESSION STATS -->
+          <div class="stats-card">
+            <div class="section-label">Session Stats</div>
+            <div class="stats-row">
+              <div class="stat-box">
+                <div class="s-num" id="statTotal">0</div>
+                <div class="s-label">Total</div>
+              </div>
+              <div class="stat-box">
+                <div class="s-num awake" id="statAwake">0</div>
+                <div class="s-label">Awake</div>
+              </div>
+              <div class="stat-box">
+                <div class="s-num sleepy" id="statSleepy">0</div>
+                <div class="s-label">Sleepy</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- HISTORY -->
+          <div class="history-card">
+            <div class="section-label">Analysis History</div>
+            <div class="history-list" id="historyList">
+              <div class="history-empty">No analyses yet</div>
+            </div>
+          </div>
+
+          <!-- MODEL INFO -->
+          <div class="model-card">
+            <div class="section-label">Model Information</div>
+            <div class="model-specs">
+              <div class="spec-row">
+                <span class="spec-key">Architecture</span
+                ><span class="spec-val accent">MobileNetV2</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Dataset</span
+                ><span class="spec-val">MRL Eye</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Training Set</span
+                ><span class="spec-val">10k / 84k images</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Val Accuracy</span
+                ><span class="spec-val green">88.56%</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Recall</span
+                ><span class="spec-val green">90.59%</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">F1-Score</span
+                ><span class="spec-val green">0.8864</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Input Shape</span
+                ><span class="spec-val">96×96×3</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-key">Model Size</span
+                ><span class="spec-val">~14 MB</span>
+              </div>
+            </div>
+
+            <div class="backend-status" id="backendStatus">
+              <div class="status-dot checking" id="statusDot"></div>
+              <span id="statusText">Checking backend...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast">
+      <span class="toast-icon" id="toastIcon">ℹ</span>
+      <span id="toastMsg">Message</span>
+    </div>
+
+    <script>
+      // ── STATE ──
+      const BACKEND = "http://localhost:8000";
+      let currentFile = null;
+      let history = [];
+      let stats = { total: 0, awake: 0, sleepy: 0 };
+      let loggedUser = "";
+
+      // ── LOGIN ──
+      function doLogin() {
+        const u = document.getElementById("loginUser").value.trim();
+        const p = document.getElementById("loginPass").value;
+        const err = document.getElementById("loginError");
+
+        // Demo: accept admin/vigil123 or any non-empty credentials
+        if (!u || !p) {
+          err.style.display = "block";
+          err.textContent = "Please enter both username and password.";
+          return;
+        }
+        if (u === "admin" && p === "vigil123") {
+          err.style.display = "none";
+          loggedUser = u;
+          showPage("termsPage");
+        } else {
+          err.style.display = "block";
+          err.textContent = "Invalid credentials. Use admin / vigil123";
+        }
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const login = document.getElementById("loginPage");
+          if (login.classList.contains("active")) doLogin();
+        }
+      });
+
+      // ── TERMS ──
+      function toggleTermsBtn() {
+        const btn = document.getElementById("termsBtn");
+        const checked = document.getElementById("termsCheck").checked;
+        btn.classList.toggle("enabled", checked);
+      }
+
+      function goToApp() {
+        document.getElementById("navUser").textContent = loggedUser;
+        showPage("appPage");
+        checkBackend();
+      }
+
+      // ── LOGOUT ──
+      function doLogout() {
+        document.getElementById("loginUser").value = "";
+        document.getElementById("loginPass").value = "";
+        document.getElementById("termsCheck").checked = false;
+        document.getElementById("termsBtn").classList.remove("enabled");
+        resetUpload();
+        showPage("loginPage");
+      }
+
+      // ── PAGE NAV ──
+      function showPage(id) {
+        document
+          .querySelectorAll(".page")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+      }
+
+      // ── DRAG & DROP ──
+      const dropZone = document.getElementById("dropZone");
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("drag-over");
+      });
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("drag-over"),
+      );
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("drag-over");
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith("image/")) loadFile(file);
+        else showToast("⚠", "Please drop an image file.");
+      });
+
+      // ── FILE HANDLING ──
+      function handleFile(e) {
+        const file = e.target.files[0];
+        if (file) loadFile(file);
+      }
+
+      function loadFile(file) {
+        currentFile = file;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          document.getElementById("previewImg").src = ev.target.result;
+
+          // Metadata chips
+          const meta = document.getElementById("previewMeta");
+          meta.innerHTML = `
+      <span class="meta-chip"><b>${file.name}</b></span>
+      <span class="meta-chip">Size: <b>${(file.size / 1024).toFixed(1)} KB</b></span>
+      <span class="meta-chip">Type: <b>${file.type.split("/")[1].toUpperCase()}</b></span>
+    `;
+
+          dropZone.style.display = "none";
+          document.getElementById("previewWrap").classList.add("show");
+
+          // Reset result
+          document.getElementById("resultEmpty").style.display = "flex";
+          document.getElementById("resultDisplay").classList.remove("show");
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function resetUpload() {
+        currentFile = null;
+        document.getElementById("fileInput").value = "";
+        document.getElementById("previewWrap").classList.remove("show");
+        dropZone.style.display = "block";
+        document.getElementById("resultEmpty").style.display = "flex";
+        document.getElementById("resultDisplay").classList.remove("show");
+      }
+
+      // ── ANALYZE ──
+      async function analyzeImage() {
+        if (!currentFile) return;
+
+        const btn = document.getElementById("analyzeBtn");
+        btn.classList.add("loading");
+        btn.disabled = true;
+
+        try {
+          const formData = new FormData();
+          formData.append("file", currentFile);
+
+          const resp = await fetch(`${BACKEND}/predict`, {
+            method: "POST",
+            body: formData,
+          });
+          if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
+
+          const data = await resp.json();
+          showResult(data.status, data.confidence);
+        } catch (err) {
+          showToast(
+            "❌",
+            "Backend unavailable. Make sure the FastAPI server is running on port 8000.",
+          );
+          console.error(err);
+        } finally {
+          btn.classList.remove("loading");
+          btn.disabled = false;
+        }
+      }
+
+      // ── SHOW RESULT ──
+      function showResult(status, confidence) {
+        const isAwake = status === "AWAKE";
+        const cls = isAwake ? "awake" : "sleepy";
+
+        // Badge
+        const badge = document.getElementById("statusBadge");
+        badge.className = `status-badge ${cls}`;
+        document.getElementById("statusIcon").textContent = isAwake
+          ? "👁"
+          : "😴";
+        document.getElementById("statusWord").textContent = status;
+        document.getElementById("statusSub").textContent = isAwake
+          ? "Eyes appear open and alert"
+          : "Eyes appear closed or drooping";
+
+        // Confidence
+        document.getElementById("confVal").textContent =
+          `${confidence.toFixed(1)}%`;
+        const bar = document.getElementById("confBar");
+        bar.className = `conf-bar-fill ${cls}`;
+        setTimeout(() => {
+          bar.style.width = confidence + "%";
+        }, 50);
+
+        // Raw score hint
+        document.getElementById("rawScore").textContent = isAwake
+          ? `${(100 - confidence).toFixed(1)}%`
+          : `${confidence.toFixed(1)}%`;
+
+        // Recommendation
+        const recBox = document.getElementById("recBox");
+        const recTitle = document.getElementById("recTitle");
+        const recText = document.getElementById("recText");
+        recBox.className = `recommendation ${cls}`;
+
+        if (isAwake) {
+          recTitle.textContent = "✅ Alert State Detected";
+          recText.textContent =
+            confidence > 85
+              ? "High confidence alert state. The subject appears well-rested and attentive."
+              : "Moderate confidence alert state. Consider re-analysis with a clearer image for higher certainty.";
+        } else {
+          recTitle.textContent = "⚠ Drowsiness Detected";
+          recText.textContent =
+            confidence > 80
+              ? "High confidence drowsiness detected. The subject shows clear signs of fatigue. Rest is recommended."
+              : "Moderate drowsiness signal. Ensure good lighting and eye visibility for best results.";
+        }
+
+        // Show result panel
+        document.getElementById("resultEmpty").style.display = "none";
+        document.getElementById("resultDisplay").classList.add("show");
+
+        // History + Stats
+        addHistory(currentFile.name, cls, confidence);
+        showToast(
+          isAwake ? "👁" : "😴",
+          `${status} · ${confidence.toFixed(1)}% confidence`,
+        );
+      }
+
+      // ── HISTORY ──
+      function addHistory(name, cls, conf) {
+        history.unshift({ name, cls, conf });
+        if (history.length > 20) history.pop();
+
+        stats.total++;
+        if (cls === "awake") stats.awake++;
+        else stats.sleepy++;
+
+        renderHistory();
+        renderStats();
+      }
+
+      function renderHistory() {
+        const list = document.getElementById("historyList");
+        if (history.length === 0) {
+          list.innerHTML = '<div class="history-empty">No analyses yet</div>';
+          return;
+        }
+        list.innerHTML = history
+          .map(
+            (h, i) => `
+    <div class="history-item">
+      <div class="h-dot ${h.cls}"></div>
+      <span class="h-name">${h.name}</span>
+      <span class="h-conf">${h.conf.toFixed(1)}%</span>
+    </div>
+  `,
+          )
+          .join("");
+      }
+
+      function renderStats() {
+        document.getElementById("statTotal").textContent = stats.total;
+        document.getElementById("statAwake").textContent = stats.awake;
+        document.getElementById("statSleepy").textContent = stats.sleepy;
+      }
+
+      // ── BACKEND CHECK ──
+      async function checkBackend() {
+        const dot = document.getElementById("statusDot");
+        const text = document.getElementById("statusText");
+        dot.className = "status-dot checking";
+        text.textContent = "Checking backend...";
+
+        try {
+          const resp = await fetch(`${BACKEND}/docs`, {
+            signal: AbortSignal.timeout(3000),
+          });
+          if (resp.ok) {
+            dot.className = "status-dot online";
+            text.textContent = "Backend online · localhost:8000";
+          } else throw new Error();
+        } catch {
+          dot.className = "status-dot offline";
+          text.textContent = "Backend offline — start FastAPI server";
+        }
+      }
+
+      // ── TOAST ──
+      function showToast(icon, msg) {
+        const t = document.getElementById("toast");
+        document.getElementById("toastIcon").textContent = icon;
+        document.getElementById("toastMsg").textContent = msg;
+        t.classList.add("show");
+        setTimeout(() => t.classList.remove("show"), 3500);
+      }
+      // ── TABS ──
+      function switchTab(name, btn) {
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-panel")
+          .forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document
+          .getElementById("tab" + name.charAt(0).toUpperCase() + name.slice(1))
+          .classList.add("active");
+        if (name !== "webcam") {
+          stopCamera();
+        }
+      }
+
+      // ── WEBCAM ──
+      let camStream = null;
+      let autoTimer = null;
+      let autoOn = false;
+
+      async function startCamera() {
+        try {
+          const btnStart = document.getElementById("btnCamStart");
+          const placeholder = document.getElementById("camPlaceholder");
+
+          // Show loading state
+          btnStart.disabled = true;
+          btnStart.textContent = "⏳ Initializing...";
+          placeholder.innerHTML =
+            '<div class="cam-placeholder" style="color:var(--muted)"><div class="cam-icon">⏳</div><p>Requesting camera access...<br/>Check your browser for permission prompt.</p></div>';
+
+          camStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: 640, height: 480 },
+            audio: false,
+          });
+
+          const video = document.getElementById("camVideo");
+          video.srcObject = camStream;
+
+          // Wait for video to start playing
+          await new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+              video.play().then(resolve).catch(resolve);
+            };
+          });
+
+          video.style.display = "block";
+          document.getElementById("camPlaceholder").style.display = "none";
+          document.getElementById("btnCamStart").style.display = "none";
+          document.getElementById("btnCamStop").style.display = "inline-flex";
+          document.getElementById("captureBtn").disabled = false;
+          showToast("📷", "Camera started - you should see yourself now");
+        } catch (err) {
+          const btnStart = document.getElementById("btnCamStart");
+          btnStart.disabled = false;
+          btnStart.textContent = "▶ Start Camera";
+
+          let errorMsg = "Camera access issue.";
+          if (err.name === "NotAllowedError") {
+            errorMsg =
+              "❌ Camera permission denied. Allow access in browser settings.";
+          } else if (err.name === "NotFoundError") {
+            errorMsg = "❌ No camera found. Check your device.";
+          } else if (err.name === "NotReadableError") {
+            errorMsg = "❌ Camera is being used by another app.";
+          }
+
+          showToast("❌", errorMsg);
+          console.error("Camera error:", err);
+        }
+      }
+
+      function stopCamera() {
+        if (camStream) {
+          camStream.getTracks().forEach((t) => t.stop());
+          camStream = null;
+        }
+        stopAuto();
+        const video = document.getElementById("camVideo");
+        video.srcObject = null;
+        video.style.display = "none";
+        document.getElementById("camPlaceholder").style.display = "flex";
+        document.getElementById("btnCamStart").style.display = "inline-flex";
+        document.getElementById("btnCamStop").style.display = "none";
+        document.getElementById("captureBtn").disabled = true;
+      }
+
+      async function captureAndAnalyze() {
+        if (!camStream) return;
+        const video = document.getElementById("camVideo");
+        const canvas = document.getElementById("snapCanvas");
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+
+        const btn = document.getElementById("captureBtn");
+        btn.classList.add("loading");
+        btn.disabled = true;
+
+        canvas.toBlob(
+          async (blob) => {
+            try {
+              const formData = new FormData();
+              formData.append("file", blob, "webcam_frame.jpg");
+              const resp = await fetch(`${BACKEND}/predict`, {
+                method: "POST",
+                body: formData,
+              });
+              if (!resp.ok) throw new Error("Server error " + resp.status);
+              const data = await resp.json();
+              showResult(data.status, data.confidence);
+            } catch (err) {
+              showToast("❌", "Backend error. Is the FastAPI server running?");
+              console.error(err);
+            } finally {
+              btn.classList.remove("loading");
+              btn.disabled = false;
+            }
+          },
+          "image/jpeg",
+          0.92,
+        );
+      }
+
+      // ── AUTO MODE ──
+      function toggleAuto() {
+        if (!camStream) {
+          showToast("📷", "Start the camera first.");
+          return;
+        }
+        autoOn = !autoOn;
+        const toggle = document.getElementById("autoToggle");
+        const status = document.getElementById("autoStatus");
+        const statusText = document.getElementById("autoStatusText");
+        toggle.classList.toggle("on", autoOn);
+        if (autoOn) {
+          const ms = parseInt(document.getElementById("intervalSelect").value);
+          statusText.textContent = "Auto-analyzing every " + ms / 1000 + "s...";
+          status.classList.add("show");
+          autoTimer = setInterval(captureAndAnalyze, ms);
+          showToast("🔁", "Auto-analyze ON");
+        } else {
+          stopAuto();
+          showToast("⏹", "Auto-analyze OFF");
+        }
+      }
+
+      function stopAuto() {
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+        autoOn = false;
+        document.getElementById("autoToggle").classList.remove("on");
+        document.getElementById("autoStatus").classList.remove("show");
+      }
+    </script>
+  </body>
+</html>
